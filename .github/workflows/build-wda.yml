@@ -1,7 +1,7 @@
 name: Build WebDriverAgent IPA
 
-# 新账号第一次跑 Actions 可能被风控取消。此版本先用最简单的步骤激活，
-# 跑通后再换回完整编译配置。
+# 在 GitHub 网页上点 Actions -> Build WebDriverAgent IPA -> Run workflow 即可。
+# 编译出的 IPA 在本次运行的 Artifacts 里下载，下载后用 Sideloadly 签名装到 iPhone。
 
 on:
   workflow_dispatch:
@@ -10,7 +10,49 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
+    timeout-minutes: 30
     steps:
-      - name: Hello - activate Actions
-        run: echo "Actions activated successfully"
+      - name: Checkout WebDriverAgent source
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: master
+          path: WDA
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build WebDriverAgentRunner (unsigned)
+        working-directory: WDA
+        run: |
+          xcodebuild \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Pack unsigned IPA
+        run: |
+          APP=$(find WDA/DerivedData -type d -name 'WebDriverAgentRunner.app' | head -n 1)
+          if [ -z "$APP" ]; then echo "BUILD FAILED: .app not found"; exit 1; fi
+          echo "app at: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -q -r WebDriverAgent.ipa Payload
+          ls -lh WebDriverAgent.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebDriverAgent-unsigned
+          path: WebDriverAgent.ipa
+          retention-days: 30
