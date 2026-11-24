@@ -1,7 +1,8 @@
-name: Build WebDriverAgent IPA
+name: Build WDA
 
-# 在 GitHub 网页上点 Actions -> Build WebDriverAgent IPA -> Run workflow 即可。
-# 编译出的 IPA 在本次运行的 Artifacts 里下载，下载后用 Sideloadly 签名装到 iPhone。
+# 放到你自己仓库的 .github/workflows/build-wda.yml，然后在 Actions 页手动运行。
+# 产物是未签名的 WebDriverAgentRunner.ipa，之后用 Sideloadly 签名并安装到手机。
+# （此配置来自验证成功的开源项目 flygonpeter-blip/wda-build）
 
 on:
   workflow_dispatch:
@@ -10,49 +11,33 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout WebDriverAgent source
-        uses: actions/checkout@v4
-        with:
-          repository: appium/WebDriverAgent
-          ref: master
-          path: WDA
+      - name: Clone WebDriverAgent
+        run: git clone --depth 1 https://github.com/appium/WebDriverAgent.git
 
-      - name: Select latest stable Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build WebDriverAgentRunner (unsigned)
-        working-directory: WDA
+      - name: Build for device without code signing
+        working-directory: WebDriverAgent
         run: |
-          xcodebuild \
+          xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath ./DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0
 
-      - name: Pack unsigned IPA
+      - name: Package ipa
         run: |
-          APP=$(find WDA/DerivedData -type d -name 'WebDriverAgentRunner.app' | head -n 1)
-          if [ -z "$APP" ]; then echo "BUILD FAILED: .app not found"; exit 1; fi
-          echo "app at: $APP"
           mkdir -p Payload
-          cp -R "$APP" Payload/
-          zip -q -r WebDriverAgent.ipa Payload
-          ls -lh WebDriverAgent.ipa
+          cp -R build/Build/Products/Release-iphoneos/WebDriverAgentRunner-Runner.app Payload/
+          rm -rf Payload/WebDriverAgentRunner-Runner.app/Frameworks/XC*
+          zip -qry WebDriverAgentRunner.ipa Payload
 
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: WebDriverAgent-unsigned
-          path: WebDriverAgent.ipa
+          name: WebDriverAgentRunner-ipa
+          path: WebDriverAgentRunner.ipa
           retention-days: 30
