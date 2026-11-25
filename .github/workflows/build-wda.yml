@@ -11,7 +11,8 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # iOS 26 needs WDA built with Xcode 26; macos-latest still maps to Xcode 16.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - name: Clone WebDriverAgent
